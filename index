@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thermoprinter Messenger</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+    
+    <link rel="icon" href="favicon.ico">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore-compat.js"></script>
+
+    <style>
+        :root {
+            --grid-color: #a5f3fc; 
+            --bg-color: #ecfeff;   
+            --paper-width: calc(26ch + 4rem); 
+        }
+
+        body {
+            background-color: var(--bg-color);
+            background-image: 
+                linear-gradient(var(--grid-color) 1px, transparent 1px),
+                linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+            background-size: 20px 20px;
+            font-family: 'VT323', monospace;
+            overflow: hidden; 
+        }
+
+        .pixel-font { font-family: 'Press Start 2P', cursive; }
+
+        .printer-width {
+            width: var(--paper-width);
+            max-width: 95vw;
+            font-size: 1.5rem; 
+            line-height: 1.2;
+        }
+
+        textarea {
+            background: transparent;
+            border: none;
+            outline: none;
+            resize: none !important;
+            overflow: hidden;
+            color: #1e293b;
+            width: 100%;
+            height: 100%;
+            font-family: 'VT323', monospace;
+            letter-spacing: 0;
+        }
+
+        /* Top Icons */
+        .icon-btn {
+            position: absolute;
+            top: 20px;
+            cursor: pointer;
+            z-index: 60;
+            transition: transform 0.2s;
+        }
+        .icon-btn:hover { transform: scale(1.1); }
+        .mailbox-btn { right: 20px; }
+        .settings-btn { left: 20px; }
+
+        /* Modals */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.4);
+            backdrop-filter: blur(2px);
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-box {
+            background: white;
+            border: 4px solid #1e293b;
+            padding: 20px;
+            width: 90%;
+            max-width: 400px;
+            box-shadow: 8px 8px 0px rgba(0,0,0,0.2);
+            font-family: 'Press Start 2P', cursive;
+        }
+
+        /* Toggle Switch */
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: #22c55e;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #22c55e;
+        }
+        
+        /* Status Dot Animations */
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+            box-shadow: 0 0 0 2px rgba(255,255,255,0.8);
+        }
+        .status-online { background-color: #22c55e; box-shadow: 0 0 10px #22c55e; }
+        .status-offline { background-color: #ef4444; }
+
+        .pulse-anim { animation: pulse 2s infinite; }
+        @keyframes pulse {
+            0% { transform: scale(1); filter: drop-shadow(0 0 0 rgba(239, 68, 68, 0)); }
+            50% { transform: scale(1.05); filter: drop-shadow(0 0 5px rgba(239, 68, 68, 0.5)); }
+            100% { transform: scale(1); filter: drop-shadow(0 0 0 rgba(239, 68, 68, 0)); }
+        }
+
+        .fly-in { animation: flyIn 1s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+        @keyframes flyIn {
+            0% { opacity: 0; transform: translateX(-50px); }
+            100% { opacity: 1; transform: translateX(0); }
+        }
+
+        /* Animation Classes */
+        .envelope-stage {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 300px;
+            height: 200px;
+            pointer-events: none;
+            z-index: 50;
+            display: none;
+        }
+        .fly-away { animation: flyRight 1.5s ease-in forwards; }
+        @keyframes flyRight {
+            0% { transform: translate(-50%, -50%) rotate(0deg); opacity: 1; }
+            20% { transform: translate(-50%, -40%) rotate(-5deg); }
+            100% { transform: translate(200%, -200%) rotate(15deg); opacity: 0; }
+        }
+        .wiggle { animation: wiggle 0.3s ease-in-out; }
+        @keyframes wiggle {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        .camera-btn { opacity: 0.3; transition: opacity 0.2s; }
+        .camera-btn:hover { opacity: 1; }
+    </style>
+</head>
+<body class="h-screen flex flex-col items-center pt-10">
+
+    <!-- Settings Icon (Wrench) -->
+    <div id="settings-btn" class="icon-btn settings-btn text-slate-400 hover:text-slate-600" title="Settings">
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
+        </svg>
+    </div>
+
+    <!-- Mailbox Icon -->
+    <div id="mailbox-btn" class="icon-btn mailbox-btn" title="Check Messages">
+        <svg id="icon-empty" class="w-10 h-10 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+        </svg>
+        <svg id="icon-full" class="w-10 h-10 text-red-500 hidden" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+            <path d="M22 6l-10 7L2 6" stroke="white" stroke-width="2" fill="none"/>
+        </svg>
+    </div>
+
+    <!-- Notification Popup -->
+    <div id="popup" class="absolute top-4 right-20 hidden fly-in bg-yellow-200 border-2 border-yellow-500 text-yellow-900 px-3 py-2 rounded shadow-lg z-50 pointer-events-none">
+        <p class="pixel-font text-[10px]">YOU HAVE MAIL!</p>
+    </div>
+
+    <!-- SETTINGS MODAL -->
+    <div id="settings-modal" class="modal-overlay hidden">
+        <div class="modal-box relative">
+            <button id="close-settings" class="absolute top-2 right-2 text-slate-400 hover:text-red-500">&times;</button>
+            <h2 class="text-sm mb-6 text-center border-b-2 border-slate-200 pb-4">SETTINGS</h2>
+            
+            <p id="settings-target-display" class="text-[10px] text-center mb-4 text-slate-500 font-bold uppercase">TARGET: ???</p>
+
+            <!-- Auto Print -->
+            <div class="flex items-center justify-between mb-6">
+                <span class="text-[10px] leading-4">AUTOMATIC<br>PRINTING (10s)</span>
+                <div class="relative inline-block w-12 h-6 align-middle select-none">
+                    <input type="checkbox" name="toggle" id="auto-print-toggle" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 border-slate-300 appearance-none cursor-pointer transition-all duration-300"/>
+                    <label for="auto-print-toggle" class="toggle-label block overflow-hidden h-6 rounded-full bg-slate-300 cursor-pointer transition-colors duration-300"></label>
+                </div>
+            </div>
+
+            <!-- New Wifi Section -->
+            <div class="border-t-2 border-slate-200 pt-4">
+                <h3 class="text-xs mb-3 text-slate-600">ADD NEW NETWORK</h3>
+                <input id="wifi-ssid" type="text" placeholder="WIFI SSID" class="w-full mb-2 p-2 text-[10px] border-2 border-slate-300 rounded font-mono uppercase focus:border-blue-500 outline-none">
+                <input id="wifi-pass" type="password" placeholder="PASSWORD" class="w-full mb-3 p-2 text-[10px] border-2 border-slate-300 rounded font-mono focus:border-blue-500 outline-none">
+                
+                <button id="send-wifi-btn" class="w-full bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-2 rounded transition-colors">
+                    SEND TO PRINTER
+                </button>
+                
+                <!-- Feedback Area -->
+                <div id="wifi-feedback" class="mt-2 text-[9px] font-bold text-center h-4"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAILBOX MODAL -->
+    <div id="mailbox-modal" class="modal-overlay hidden">
+        <div class="modal-box relative">
+            <button id="close-mailbox" class="absolute top-2 right-2 text-slate-400 hover:text-red-500">&times;</button>
+            <h2 class="text-sm mb-6 text-center border-b-2 border-slate-200 pb-4">MAILBOX</h2>
+            
+            <!-- Beni Row -->
+            <div class="flex items-center justify-between mb-6">
+                <div class="flex flex-col">
+                    <span class="text-blue-600 text-xs mb-1">TO BENI</span>
+                    <span id="count-beni" class="text-[10px] text-slate-500">0 MESSAGES</span>
+                </div>
+                <button id="print-beni" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] py-2 px-3 rounded shadow-md active:transform active:translate-y-1 transition-all flex items-center">
+                    PRINT
+                </button>
+            </div>
+
+            <!-- Mimi Row -->
+            <div class="flex items-center justify-between mb-2">
+                <div class="flex flex-col">
+                    <span class="text-pink-600 text-xs mb-1">TO MIMI</span>
+                    <span id="count-mimi" class="text-[10px] text-slate-500">0 MESSAGES</span>
+                </div>
+                <button id="print-mimi" class="bg-pink-600 hover:bg-pink-500 text-white text-[10px] py-2 px-3 rounded shadow-md active:transform active:translate-y-1 transition-all flex items-center">
+                    PRINT
+                </button>
+            </div>
+            
+            <p id="status-display" class="mt-4 text-[8px] text-center text-slate-400 h-4"></p>
+        </div>
+    </div>
+
+    <!-- ALERT MODAL (Replaces native alerts) -->
+    <div id="alert-modal" class="modal-overlay hidden">
+        <div class="modal-box relative text-center">
+            <button id="close-alert" class="absolute top-2 right-2 text-slate-400 hover:text-red-500">&times;</button>
+            <div id="alert-message" class="text-xs leading-loose my-6 whitespace-pre-wrap"></div>
+            <button id="ok-alert" class="bg-slate-800 text-white text-[10px] py-2 px-4 rounded hover:bg-slate-700">OK</button>
+        </div>
+    </div>
+
+    <!-- Header / To Section -->
+    <div class="z-10 text-center mb-8 select-none cursor-pointer hover:scale-105 transition-transform relative" id="header-container">
+        
+        <!-- Status Indicator -->
+        <div class="absolute -top-6 left-1/2 transform -translate-x-1/2 flex items-center space-x-2 bg-white/50 px-3 py-1 rounded-full backdrop-blur-sm">
+            <div id="status-dot" class="status-dot status-offline"></div>
+            <span id="status-text" class="text-[10px] text-slate-500 font-sans font-bold tracking-widest">OFFLINE</span>
+        </div>
+
+        <h1 class="pixel-font text-xl text-slate-800 tracking-widest leading-loose mt-2">
+            TO <span id="addressee-name" class="text-pink-600 border-b-4 border-pink-600 pb-1">MIMI</span>
+        </h1>
+        <p class="text-slate-400 text-sm mt-2 pixel-font text-[10px] opacity-60">(CLICK TO SWITCH)</p>
+    </div>
+
+    <!-- Main Writing Area -->
+    <div id="paper-container" class="relative bg-white/80 backdrop-blur-sm p-6 shadow-xl border-2 border-slate-200 printer-width min-h-[400px] flex flex-col">
+        <textarea 
+            id="message-input" 
+            class="flex-1 text-xl leading-relaxed uppercase min-h-full" 
+            placeholder="TYPE HERE..." 
+            spellcheck="false"
+            autofocus
+            cols="32"
+        ></textarea>
+        
+        <div class="absolute bottom-2 right-2 camera-btn cursor-pointer z-20" id="camera-icon" title="Send Image">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                <circle cx="12" cy="13" r="4"></circle>
+            </svg>
+        </div>
+        <input type="file" id="image-input" accept="image/*" class="hidden">
+    </div>
+
+    <div class="mt-8 text-slate-500 text-center max-w-md px-4" id="instruction-text">
+        <p class="pixel-font text-[10px] leading-6">
+            TYPE MESSAGE.<br>
+            SIGN OFF WITH <span class="text-blue-600 bg-blue-100 px-1">BENI</span> OR <span class="text-pink-600 bg-pink-100 px-1">MIMI</span><br>
+            ON A NEW LINE TO SEND.
+        </p>
+    </div>
+
+    <!-- ANIMATION ASSETS -->
+    <div id="animation-stage" class="envelope-stage">
+        <div class="absolute bottom-0 w-full h-2/3 bg-blue-100 border-2 border-blue-200 rounded-b-lg z-10"></div>
+        <div id="anim-letter" class="absolute left-4 right-4 bg-white border border-slate-200 h-40 top-0 z-0 transition-all duration-700 overflow-hidden flex items-center justify-center">
+             <div id="anim-letter-content" class="w-full h-full p-2 space-y-2 opacity-50"></div>
+        </div>
+        <div id="flap-open" class="absolute top-1/3 left-0 w-full h-0 border-l-[150px] border-l-transparent border-r-[150px] border-r-transparent border-t-[100px] border-t-blue-200 z-0 origin-top transition-all duration-500"></div>
+        <div class="absolute bottom-0 w-full h-2/3 border-l-[150px] border-l-blue-200 border-r-[150px] border-r-blue-200 border-b-[100px] border-b-blue-100 rounded-b-lg z-20 pointer-events-none clip-path-pocket"></div>
+        <div id="flap-closed" class="hidden absolute top-[33%] left-0 w-full h-0 border-l-[150px] border-l-transparent border-r-[150px] border-r-transparent border-t-[100px] border-t-blue-300 z-30 drop-shadow-md origin-top"></div>
+    </div>
+
+    <script>
+        // CONFIG
+        const firebaseConfig = {
+            apiKey: "AIzaSyB5L1iYYtq9rVHZQ0EV7kz4s2EuNukQPi0",
+            authDomain: "faxchat-eb1b7.firebaseapp.com",
+            projectId: "faxchat-eb1b7",
+            storageBucket: "faxchat-eb1b7.firebasestorage.app",
+            messagingSenderId: "422141949640",
+            appId: "1:422141949640:web:73cfdbe43bc9bd97c3d7fd",
+            measurementId: "G-531JKNLLQS"
+        };
+        
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        const APP_ID = 'faxchat-eb1b7';
+        // PRINTER IDs
+        const PRINTERS = {
+            'BENI': 'beni_printer',
+            'MIMI': 'mimi_printer'
+        };
+        const USERS = ['MIMI', 'BENI'];
+        let currentAddresseeIndex = 0; // 0 = Mimi (To Mimi), 1 = Beni (To Beni)
+        let myUserId = null;
+        
+        // UI Refs
+        const headerContainer = document.getElementById('header-container');
+        const addresseeName = document.getElementById('addressee-name');
+        const messageInput = document.getElementById('message-input');
+        const paperContainer = document.getElementById('paper-container');
+        const cameraIcon = document.getElementById('camera-icon');
+        const imageInput = document.getElementById('image-input');
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+        
+        // Modal Refs
+        const settingsBtn = document.getElementById('settings-btn');
+        const settingsModal = document.getElementById('settings-modal');
+        const closeSettings = document.getElementById('close-settings');
+        const autoPrintToggle = document.getElementById('auto-print-toggle');
+        const wifiSsid = document.getElementById('wifi-ssid');
+        const wifiPass = document.getElementById('wifi-pass');
+        const sendWifiBtn = document.getElementById('send-wifi-btn');
+        const wifiFeedback = document.getElementById('wifi-feedback');
+        
+        const settingsTargetDisplay = document.getElementById('settings-target-display');
+
+        const mailboxBtn = document.getElementById('mailbox-btn');
+        const mailboxModal = document.getElementById('mailbox-modal');
+        const closeMailbox = document.getElementById('close-mailbox');
+        const iconEmpty = document.getElementById('icon-empty');
+        const iconFull = document.getElementById('icon-full');
+        const popup = document.getElementById('popup');
+        
+        const countBeni = document.getElementById('count-beni');
+        const countMimi = document.getElementById('count-mimi');
+        const printBeni = document.getElementById('print-beni');
+        const printMimi = document.getElementById('print-mimi');
+        const statusDisplay = document.getElementById('status-display');
+
+        // Alert Modal Refs
+        const alertModal = document.getElementById('alert-modal');
+        const alertMessage = document.getElementById('alert-message');
+        const closeAlert = document.getElementById('close-alert');
+        const okAlert = document.getElementById('ok-alert');
+
+        // Animation Refs
+        const animationStage = document.getElementById('animation-stage');
+        const animLetter = document.getElementById('anim-letter');
+        const animLetterContent = document.getElementById('anim-letter-content');
+        const flapOpen = document.getElementById('flap-open');
+        const flapClosed = document.getElementById('flap-closed');
+
+        let beniCount = 0;
+        let mimiCount = 0;
+        let hasShownPopup = false;
+        let wifiConfirmStage = 0; // 0 = Input, 1 = Confirm
+        
+        let statusUnsubscribe = null;
+        let settingsUnsubscribe = null;
+        let wifiStatusUnsubscribe = null;
+
+        // --- AUTH ---
+        const initAuth = async () => {
+            try { await auth.signInAnonymously(); } 
+            catch (error) { console.error("Auth Error:", error); }
+        };
+        auth.onAuthStateChanged((user) => { if (user) myUserId = user.uid; });
+        initAuth();
+
+        // --- HELPERS ---
+        function getTargetPrinterID() {
+            const name = USERS[currentAddresseeIndex];
+            return PRINTERS[name];
+        }
+
+        // --- ALERT MODAL SYSTEM (No more native alert/confirm) ---
+        function showAlert(msg) {
+            alertMessage.innerText = msg;
+            alertModal.classList.remove('hidden');
+        }
+        closeAlert.addEventListener('click', () => alertModal.classList.add('hidden'));
+        okAlert.addEventListener('click', () => alertModal.classList.add('hidden'));
+
+        // --- 1. SETUP LISTENERS ---
+        
+        function setupDynamicListeners() {
+            const printerId = getTargetPrinterID();
+            const basePath = `artifacts/${APP_ID}/public/data/printers/${printerId}`;
+            
+            // Update Header for Clarity
+            if (settingsTargetDisplay) {
+                settingsTargetDisplay.innerText = `TARGET: ${printerId.toUpperCase().replace('_', ' ')}`;
+            }
+
+            // A. Status Listener
+            if (statusUnsubscribe) statusUnsubscribe();
+            statusUnsubscribe = db.doc(`${basePath}/status/connection`).onSnapshot((doc) => {
+                if (doc.exists) {
+                    const data = doc.data();
+                    const lastSeen = data.last_seen ? data.last_seen.toDate() : new Date(0);
+                    const isPrinterConnected = data.is_printer_connected;
+                    const now = new Date();
+                    const diffSeconds = (now - lastSeen) / 1000;
+
+                    if (diffSeconds > 45) {
+                        setStatus('pi-offline');
+                    } else if (!isPrinterConnected) {
+                        setStatus('printer-offline');
+                    } else {
+                        setStatus('online');
+                    }
+                } else {
+                    setStatus('pi-offline');
+                }
+            });
+
+            // B. Settings Listener
+            if (settingsUnsubscribe) settingsUnsubscribe();
+            settingsUnsubscribe = db.doc(`${basePath}/settings/config`).onSnapshot((doc) => {
+                if (doc.exists) {
+                    const data = doc.data();
+                    autoPrintToggle.checked = data.automatic_printing || false;
+                } else {
+                    autoPrintToggle.checked = true;
+                }
+            });
+            
+            // C. Wifi Result Listener
+            if(wifiStatusUnsubscribe) wifiStatusUnsubscribe();
+            wifiFeedback.innerText = "";
+            wifiStatusUnsubscribe = db.doc(`${basePath}/settings/wifi_status`).onSnapshot((doc) => {
+                if(doc.exists) {
+                    const data = doc.data();
+                    const status = data.status;
+                    const msg = data.message;
+                    const time = data.timestamp ? data.timestamp.toDate() : new Date(0);
+                    
+                    // Only show updates from the last minute
+                    if ((new Date() - time) < 60000) {
+                        if (status === 'TESTING') {
+                            wifiFeedback.innerText = "⏳ " + msg;
+                            wifiFeedback.className = "mt-2 text-[9px] font-bold text-center h-4 text-blue-600";
+                        } else if (status === 'SUCCESS') {
+                            wifiFeedback.innerText = "✅ " + msg;
+                            wifiFeedback.className = "mt-2 text-[9px] font-bold text-center h-4 text-green-600";
+                            resetWifiBtn();
+                        } else if (status === 'FAILED') {
+                            wifiFeedback.innerText = "❌ " + msg;
+                            wifiFeedback.className = "mt-2 text-[9px] font-bold text-center h-4 text-red-600";
+                            resetWifiBtn();
+                        }
+                    }
+                }
+            });
+        }
+
+        function resetWifiBtn() {
+            sendWifiBtn.innerText = "SEND TO PRINTER";
+            sendWifiBtn.className = "w-full bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-2 rounded transition-colors";
+            sendWifiBtn.disabled = false;
+            wifiConfirmStage = 0;
+        }
+
+        function setStatus(state) {
+            statusDot.className = 'status-dot'; 
+            if (state === 'online') {
+                statusDot.classList.add('status-online');
+                statusText.innerText = "ONLINE";
+                statusText.className = "text-[10px] text-green-600 font-sans font-bold tracking-widest";
+            } else if (state === 'printer-offline') {
+                statusDot.classList.add('status-offline');
+                statusText.innerText = "PRINTER OFFLINE";
+                statusText.className = "text-[10px] text-red-500 font-sans font-bold tracking-widest";
+            } else {
+                statusDot.classList.add('status-offline');
+                statusText.innerText = "PI OFFLINE";
+                statusText.className = "text-[10px] text-red-500 font-sans font-bold tracking-widest";
+            }
+        }
+
+        // --- 2. MAILBOX LOGIC ---
+        
+        function setupMailboxListeners() {
+            const beniPath = `artifacts/${APP_ID}/public/data/printers/${PRINTERS['BENI']}/queue`;
+            const mimiPath = `artifacts/${APP_ID}/public/data/printers/${PRINTERS['MIMI']}/queue`;
+            
+            db.collection(beniPath).onSnapshot((snapshot) => {
+                beniCount = snapshot.size;
+                updateMailboxUI();
+            });
+            
+            db.collection(mimiPath).onSnapshot((snapshot) => {
+                mimiCount = snapshot.size;
+                updateMailboxUI();
+            });
+        }
+
+        function updateMailboxUI() {
+            const total = beniCount + mimiCount;
+            
+            if (total > 0) {
+                iconEmpty.classList.add('hidden');
+                iconFull.classList.remove('hidden');
+                mailboxBtn.classList.add('pulse-anim');
+                
+                if (!hasShownPopup) {
+                    popup.classList.remove('hidden');
+                    popup.classList.add('fly-in');
+                    setTimeout(() => popup.classList.add('hidden'), 6000);
+                    hasShownPopup = true;
+                }
+            } else {
+                iconEmpty.classList.remove('hidden');
+                iconFull.classList.add('hidden');
+                mailboxBtn.classList.remove('pulse-anim');
+                popup.classList.add('hidden');
+                hasShownPopup = false;
+            }
+
+            countBeni.innerText = `${beniCount} MESSAGE(S)`;
+            countMimi.innerText = `${mimiCount} MESSAGE(S)`;
+            
+            if (beniCount > 0) printBeni.classList.add('pulse-anim');
+            else printBeni.classList.remove('pulse-anim');
+            
+            if (mimiCount > 0) printMimi.classList.add('pulse-anim');
+            else printMimi.classList.remove('pulse-anim');
+        }
+
+        setupMailboxListeners();
+        setupDynamicListeners();
+
+        // --- 3. SETTINGS & WIFI INTERACTIONS ---
+
+        settingsBtn.addEventListener('click', () => settingsModal.classList.remove('hidden'));
+        closeSettings.addEventListener('click', () => {
+            settingsModal.classList.add('hidden');
+            resetWifiBtn(); // Reset logic on close
+        });
+        
+        autoPrintToggle.addEventListener('change', (e) => {
+            const printerId = getTargetPrinterID();
+            const settingsPath = `artifacts/${APP_ID}/public/data/printers/${printerId}/settings/config`;
+            
+            db.doc(settingsPath).set({
+                automatic_printing: e.target.checked
+            }, { merge: true });
+        });
+
+        // WIFI UPDATE BUTTON (Replaced confirm() with double-click logic)
+        sendWifiBtn.addEventListener('click', async () => {
+            if (wifiConfirmStage === 0) {
+                // VALIDATION & CONFIRMATION STAGE
+                const ssid = wifiSsid.value;
+                const password = wifiPass.value;
+                
+                if (!ssid || !password) {
+                    wifiFeedback.innerText = "ENTER SSID & PASSWORD";
+                    wifiFeedback.className = "mt-2 text-[9px] font-bold text-center h-4 text-red-500";
+                    return;
+                }
+                
+                // Switch button to Confirm mode
+                sendWifiBtn.innerText = "CONFIRM SEND?";
+                sendWifiBtn.className = "w-full bg-red-600 hover:bg-red-500 text-white text-[10px] py-2 rounded transition-colors";
+                wifiConfirmStage = 1;
+                return;
+            }
+
+            // ACTION STAGE
+            const ssid = wifiSsid.value;
+            const password = wifiPass.value;
+            const printerId = getTargetPrinterID();
+            const wifiPath = `artifacts/${APP_ID}/public/data/printers/${printerId}/settings/wifi`;
+            
+            sendWifiBtn.innerText = "SENDING...";
+            sendWifiBtn.className = "w-full bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-2 rounded transition-colors";
+            sendWifiBtn.disabled = true;
+            
+            wifiFeedback.innerText = "WAITING FOR PI...";
+            wifiFeedback.className = "mt-2 text-[9px] font-bold text-center h-4 text-slate-500";
+
+            try {
+                await db.doc(wifiPath).set({
+                    ssid: ssid,
+                    password: password,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                
+                // Clear fields immediately
+                wifiSsid.value = "";
+                wifiPass.value = "";
+                
+            } catch (e) {
+                showAlert("Error sending settings: " + e.message);
+                resetWifiBtn();
+            }
+        });
+
+        mailboxBtn.addEventListener('click', () => mailboxModal.classList.remove('hidden'));
+        closeMailbox.addEventListener('click', () => mailboxModal.classList.add('hidden'));
+
+        headerContainer.addEventListener('click', (e) => {
+            currentAddresseeIndex = (currentAddresseeIndex + 1) % USERS.length;
+            const newName = USERS[currentAddresseeIndex];
+            
+            addresseeName.style.opacity = '0';
+            setTimeout(() => {
+                addresseeName.innerText = newName;
+                if(newName === 'MIMI') {
+                    addresseeName.className = "text-pink-600 border-b-4 border-pink-600 pb-1";
+                } else {
+                    addresseeName.className = "text-blue-600 border-b-4 border-blue-600 pb-1";
+                }
+                addresseeName.style.opacity = '1';
+                setupDynamicListeners();
+            }, 150);
+        });
+
+        async function triggerManualPrint(printerName) {
+            const printerId = PRINTERS[printerName];
+            const basePath = `artifacts/${APP_ID}/public/data/printers/${printerId}`;
+            
+            statusDisplay.innerText = `CHECKING ${printerName}'S PRINTER...`;
+            statusDisplay.className = "mt-4 text-[8px] text-center text-slate-400 h-4";
+
+            try {
+                const doc = await db.doc(`${basePath}/status/connection`).get();
+                if (doc.exists) {
+                    const data = doc.data();
+                    const lastSeen = data.last_seen ? data.last_seen.toDate() : new Date(0);
+                    const isPrinterConnected = data.is_printer_connected;
+                    const now = new Date();
+                    
+                    if ((now - lastSeen) / 1000 > 60) {
+                        showAlert("⚠️ Raspberry Pi is OFFLINE.\nCannot print.");
+                        statusDisplay.innerText = "ERROR: PI OFFLINE";
+                        statusDisplay.className = "mt-4 text-[8px] text-center text-red-500 h-4";
+                        return;
+                    }
+                    if (!isPrinterConnected) {
+                        showAlert(`⚠️ Printer is DISCONNECTED.\nError: ${data.last_error || 'Unknown'}`);
+                        statusDisplay.innerText = "ERROR: PRINTER OFFLINE";
+                        statusDisplay.className = "mt-4 text-[8px] text-center text-red-500 h-4";
+                        return;
+                    }
+                }
+            } catch (e) {}
+
+            statusDisplay.innerText = "TRIGGERING PRINT...";
+            statusDisplay.className = "mt-4 text-[8px] text-center text-blue-500 h-4";
+            
+            await db.doc(`${basePath}/settings/config`).set({
+                trigger_print: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+
+            setTimeout(() => { statusDisplay.innerText = ""; }, 2000);
+        }
+
+        printBeni.addEventListener('click', () => { if(beniCount > 0) triggerManualPrint('BENI'); });
+        printMimi.addEventListener('click', () => { if(mimiCount > 0) triggerManualPrint('MIMI'); });
+
+        // --- 4. SENDING LOGIC ---
+        
+        messageInput.addEventListener('input', function() {
+            this.style.height = 'auto'; 
+            if (this.scrollHeight > paperContainer.clientHeight) {
+                this.style.height = (this.scrollHeight) + 'px';
+            } else {
+                this.style.height = '100%';
+            }
+            checkSignature(this.value);
+        });
+
+        cameraIcon.addEventListener('click', () => { imageInput.click(); });
+        imageInput.addEventListener('change', async (e) => {
+            if (e.target.files && e.target.files[0]) {
+                try {
+                    const resizedBase64 = await resizeImage(e.target.files[0], 384);
+                    const inferredSender = USERS[(currentAddresseeIndex + 1) % USERS.length];
+                    await triggerSendSequence({ type: 'image', data: resizedBase64 }, inferredSender);
+                } catch (err) { showAlert("Image Error"); }
+                imageInput.value = '';
+            }
+        });
+
+        function resizeImage(file, maxWidth) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.src = event.target.result;
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const scaleFactor = maxWidth / img.width;
+                        canvas.width = maxWidth;
+                        canvas.height = img.height * scaleFactor;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        resolve(canvas.toDataURL('image/png'));
+                    };
+                    img.onerror = reject;
+                };
+                reader.onerror = reject;
+            });
+        }
+
+        function checkSignature(text) {
+            const lines = text.trimEnd().split('\n');
+            if (lines.length === 0) return;
+            const lastLine = lines[lines.length - 1].trim().toUpperCase();
+            if (lastLine === 'BENI' || lastLine === 'MIMI') {
+                const signer = lastLine;
+                lines.pop(); 
+                const cleanMessage = lines.join('\n').trim();
+                if (cleanMessage.length > 0) {
+                    triggerSendSequence({ type: 'text', data: cleanMessage }, signer);
+                } else {
+                    paperContainer.classList.add('wiggle');
+                    setTimeout(() => paperContainer.classList.remove('wiggle'), 300);
+                }
+            }
+        }
+
+        async function triggerSendSequence(contentObj, signer) {
+            messageInput.blur();
+            messageInput.disabled = true;
+            cameraIcon.style.display = 'none';
+            await playSendAnimation(contentObj);
+            
+            if (!myUserId) return;
+            try {
+                const printerId = getTargetPrinterID();
+                const queuePath = `artifacts/${APP_ID}/public/data/printers/${printerId}/queue`;
+
+                const now = new Date();
+                const pad = (n) => n.toString().padStart(2, '0');
+                const timeString = `${pad(now.getDate())}.${pad(now.getMonth()+1)}.${now.getFullYear().toString().slice(-2)} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+                
+                const payload = {
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                    senderId: myUserId,
+                    from_name: signer,
+                    to_name: USERS[currentAddresseeIndex],
+                    date_string: timeString
+                };
+
+                if (contentObj.type === 'text') {
+                    payload.text = contentObj.data;
+                    payload.type = 'text';
+                } else if (contentObj.type === 'image') {
+                    payload.text = '';
+                    payload.type = 'image';
+                    payload.image = contentObj.data.split(',')[1]; 
+                }
+                
+                await db.collection(queuePath).add(payload);
+            } catch (error) { showAlert("Error sending: " + error.message); }
+
+            resetUI();
+        }
+
+        function playSendAnimation(contentObj) {
+            return new Promise((resolve) => {
+                if (contentObj && contentObj.type === 'image') {
+                    animLetterContent.innerHTML = `<img src="${contentObj.data}" style="width:100%; height:100%; object-fit:cover; opacity:0.8; filter:grayscale(100%);">`;
+                } else {
+                    animLetterContent.innerHTML = `<div class="h-2 bg-slate-200 w-3/4 mb-2"></div><div class="h-2 bg-slate-200 w-full mb-2"></div><div class="h-2 bg-slate-200 w-1/2"></div>`;
+                }
+                animationStage.style.display = 'block';
+                animationStage.classList.remove('fly-away');
+                flapClosed.classList.add('hidden');
+                flapOpen.style.transform = 'rotateX(0deg)';
+                animLetter.style.top = '-160px'; 
+                animLetter.style.transform = 'scale(1)';
+                paperContainer.style.opacity = '0';
+                paperContainer.style.transform = 'scale(0.9)';
+                setTimeout(() => {
+                    animLetter.style.top = '40px'; 
+                    setTimeout(() => {
+                        flapOpen.style.transform = 'rotateX(180deg)';
+                        flapOpen.style.zIndex = '25'; 
+                        flapOpen.style.opacity = '0';
+                        flapClosed.classList.remove('hidden');
+                        setTimeout(() => {
+                            animationStage.classList.add('fly-away');
+                            setTimeout(() => resolve(), 1000);
+                        }, 400);
+                    }, 600);
+                }, 100);
+            });
+        }
+
+        function resetUI() {
+            animationStage.style.display = 'none';
+            messageInput.value = '';
+            messageInput.disabled = false;
+            messageInput.style.height = '100%';
+            cameraIcon.style.display = 'block';
+            paperContainer.style.opacity = '1';
+            paperContainer.style.transform = 'scale(1)';
+            messageInput.focus();
+        }
+    </script>
+</body>
+</html>
