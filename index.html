@@ -22,7 +22,7 @@
         :root {
             --grid-color: #a5f3fc; 
             --bg-color: #ecfeff;   
-            --paper-width: calc(26ch + 4rem); 
+            --paper-width: calc(36ch + 4rem); 
         }
 
         body {
@@ -32,7 +32,9 @@
                 linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
             background-size: 20px 20px;
             font-family: 'VT323', monospace;
-            overflow: hidden; 
+            /* CHANGED: Allow vertical scrolling, hide horizontal overflow */
+            overflow-x: hidden; 
+            overflow-y: auto;
         }
 
         .pixel-font { font-family: 'Press Start 2P', cursive; }
@@ -152,7 +154,8 @@
         .camera-btn:hover { opacity: 1; }
     </style>
 </head>
-<body class="h-screen flex flex-col items-center pt-10">
+<!-- CHANGED: min-h-screen allows the page to grow, pb-20 adds space at bottom for scrolling -->
+<body class="min-h-screen flex flex-col items-center pt-10 pb-20">
 
     <!-- Settings Icon (Wrench) -->
     <div id="settings-btn" class="icon-btn settings-btn text-slate-400 hover:text-slate-600" title="Settings">
@@ -322,11 +325,14 @@
         const db = firebase.firestore();
 
         const APP_ID = 'faxchat-eb1b7';
-        // PRINTER IDs
+        
+        // --- SWAPPED IDS HERE ---
         const PRINTERS = {
-            'BENI': 'beni_printer',
-            'MIMI': 'mimi_printer'
+            'BENI': 'mimi_printer', // To Beni -> Send to mimi_printer (which is with Beni)
+            'MIMI': 'beni_printer'  // To Mimi -> Send to beni_printer (which is with Mimi)
         };
+        // ------------------------
+
         const USERS = ['MIMI', 'BENI'];
         let currentAddresseeIndex = 0; // 0 = Mimi (To Mimi), 1 = Beni (To Beni)
         let myUserId = null;
@@ -418,7 +424,11 @@
             
             // Update Header for Clarity
             if (settingsTargetDisplay) {
-                settingsTargetDisplay.innerText = `TARGET: ${printerId.toUpperCase().replace('_', ' ')}`;
+                // Show user friendly name based on ID
+                let displayName = "UNKNOWN";
+                if(printerId === 'beni_printer') displayName = "WITH MIMI (BENI PRINTER)";
+                if(printerId === 'mimi_printer') displayName = "WITH BENI (MIMI PRINTER)";
+                settingsTargetDisplay.innerText = `TARGET: ${displayName}`;
             }
 
             // A. Status Listener
@@ -510,6 +520,7 @@
         // --- 2. MAILBOX LOGIC ---
         
         function setupMailboxListeners() {
+            // Note: We use the *swapped* logic for keys to match the user labels
             const beniPath = `artifacts/${APP_ID}/public/data/printers/${PRINTERS['BENI']}/queue`;
             const mimiPath = `artifacts/${APP_ID}/public/data/printers/${PRINTERS['MIMI']}/queue`;
             
@@ -829,7 +840,8 @@
             cameraIcon.style.display = 'block';
             paperContainer.style.opacity = '1';
             paperContainer.style.transform = 'scale(1)';
-            messageInput.focus();
+            // REMOVED: messageInput.focus(); 
+            // This prevents the keyboard from snapping the screen down on mobile after sending.
         }
     </script>
 </body>
